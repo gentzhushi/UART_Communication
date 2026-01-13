@@ -10,11 +10,11 @@
 #include<unistd.h>
 #include<stdio.h>
 #include<stdbool.h>
+#include<time.h>
 
 #define TIME 1000
 
 int setup(char *fname){
-        
         shm_unlink(fname);
 	int fd = shm_open(
 			fname, 
@@ -27,14 +27,14 @@ int setup(char *fname){
 		return -1;
 	}
 
-	printf("shm_open ok, file_descriptor:%d\n", fd);
+	fprintf(stderr, "Shared Memory opened. file_descriptor:%d\n", fd);
 
 	if (ftruncate(fd, 1) == -1){
 		perror("ftruncate");
 		return -1;
 	}
 	
-	printf("Wire created.\n");
+	fprintf(stderr, "Wire created.\n");
 
 	return fd;
 }
@@ -44,9 +44,7 @@ void char2bits(unsigned char buff, bool* bits){
                 bits[i] = (buff % 2 == 1) ? 1 : 0;
 }
 
-static inline int wire_write(int fd, bool value){
-        
-        unsigned char *p = mmap(NULL, 1, PROT_WRITE, MAP_SHARED, fd, 0);
+static inline int wire_write(volatile unsigned char *p, bool value){
 
         if (p == MAP_FAILED){
                 return -1;
@@ -61,24 +59,26 @@ static void sleep_ms(long ms){
         struct timespec ts;
         ts.tv_sec  = ms / 1000;
         ts.tv_nsec = (ms % 1000) * 1000 * 1000;
+
+		nanosleep(&ts, NULL);
 }
 
 int send_bits2wire(bool* bits, int fd){
+	volatile unsigned char *p = mmap(NULL, 1, PROT_WRITE, MAP_SHARED, fd, 0);
 
-
-        if (wire_write(fd, true) == -1) return -1;
+        if (wire_write(p, 0) == -1) return -1;
         sleep_ms(TIME);
         
-        printf("Tu e shkru: 0b1");
+        fprintf(stderr, "Tu e shkru: 0b0");
 
         for(int i = 0; i < 8; i++){
-                printf("%d", bits[i]);
-                wire_write(fd, bits[i]);
+                fprintf(stderr, "%d", bits[i]);
+                wire_write(p, bits[i]);
                 sleep_ms(TIME);
         }
         
-        wire_write(fd, 1);
-        printf("1\n");
+        wire_write(p, 1);
+        fprintf(stderr, "1\n");
         
         return 0;
 }
@@ -88,14 +88,16 @@ int loop(int fd){
 	while (1){
                 unsigned char buffer;
 
-                printf("\nShënoje shkronjën %d:", ++cnt);
+                fprintf(stderr, "\nShënoje shkronjën %d: ", ++cnt);
                 scanf(" %c", &buffer);
 
                 bool bits[8];
                 char2bits(buffer, bits);
 
-                if (send_bits2wire(bits, fd) == -1) 
-                        return -1;
+                if (send_bits2wire(bits, fd) == -1){
+                        fprintf(stderr, "Error, s'mujtëm me shkru n'file.");
+                        continue;
+                }
 	}
 
         return 0;
